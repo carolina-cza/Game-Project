@@ -1,13 +1,39 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="UTF-8">
-    <link rel="icon" href="/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vite App</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
-  </body>
+    <title>Schere Stein Papier</title>
+    <link rel="stylesheet" href="..\src\assets\main.css">
+</head>
+<body>
+    <div id="app">
+        <div v-if="page === 'start'">
+            <h1>Willkommen zu Schere Stein Papier</h1>
+            <button @click="page = 'game'">Start</button>
+            <button @click="page = 'help'">Hilfe</button>
+        </div>
+        <div v-else-if="page === 'game'">
+            <h1>Schere Stein Papier</h1>
+            <div class="choices">
+                <button @click="play('Schere')">✂️</button>
+                <button @click="play('Stein')">🪨</button>
+                <button @click="play('Papier')">📄</button>
+            </div>
+            <div class="result">
+                <p>Du: {{ playerChoice }}</p>
+                <p>Computer: {{ computerChoice }}</p>
+                <p>Ergebnis: {{ result }}</p>
+            </div>
+            <button @click="page = 'start'">Zurück zur Startseite</button>
+        </div>
+        <div v-else-if="page === 'help'">
+            <h1>Hilfe</h1>
+            <p>Wähle Schere, Stein oder Papier, um gegen den Computer zu spielen.</p>
+            <button @click="page = 'start'">Zurück zur Startseite</button>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+    <script src="app.js"></script>
+</body>
 </html>
