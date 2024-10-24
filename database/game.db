@@ -1,7 +1,0 @@
-CREATE TABLE game_state (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    player_one_move TEXT,
-    player_two_move TEXT,
-    result TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-);
