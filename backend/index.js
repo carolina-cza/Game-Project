@@ -8,7 +8,7 @@ const port = 3000;
 app.use(cors());
 app.use(express.json());
 
-const db = new sqlite3.Database('./database/game.db');
+const db = new sqlite3.Database('./database/database.db');
 
 // Spielzug speichern
 app.post('/move', (req, res) => {
