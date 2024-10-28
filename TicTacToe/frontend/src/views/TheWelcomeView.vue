@@ -2,7 +2,7 @@
     <div id='theContainer'>
       <h1>Welcome</h1>
       <h2>Mert's Tic-Tac-Toe Game</h2>
-      <router-link to="/tictactoe">
+      <router-link to="/joinid">
         <button style="margin: 23px; width: 24%;">Play Game</button>
       </router-link>
     </div>
