@@ -1,78 +1,140 @@
 <template>
-    <main class="pt-8 text-center">
-      <h1 class="mb-8 text-3xl font-bold uppercase">Tic Tac Toe</h1>
-  
-      <h3 class="text-xl mb-4">Player {{ player }}'s turn</h3>
-  
-      <div class="flex flex-col items-center mb-8">
+  <main class="pt-8 text-center">
+    <h1 class="mb-8 text-3xl font-bold uppercase">Tic Tac Toe</h1>
+
+    <div class="player-info mb-6">
+      <p class="text-xl">Du bist: 
+        <span :class="{'text-pink-500': currentPlayer === 'X', 'text-blue-400': currentPlayer === 'O'}">
+          {{ currentPlayer === 'X' ? '✕' : '○' }}
+        </span>
+      </p>
+      <p class="text-xl mt-2" :class="{'text-green-400': isMyTurn, 'text-red-400': !isMyTurn}">
+        {{ isMyTurn ? 'Du bist dran!' : 'Gegner ist dran!' }}
+      </p>
+    </div>
+
+    <div class="flex flex-col items-center mb-8">
+      <div 
+        v-for="(row, x) in board" 
+        :key="x"
+        class="flex">
         <div 
-          v-for="(row, x) in board" 
-          :key="x"
-          class="flex">
-          <div 
-            v-for="(cell, y) in row" 
-            :key="y" 
-            @click="MakeMove(x, y)" 
-            :class="`border border-white w-24 h-24 hover:bg-gray-700 flex items-center justify-center material-icons-outlined text-4xl cursor-pointer ${cell === 'X' ? 'text-pink-500' : 'text-blue-400'}`">
-            {{ cell === 'X' ? 'close' : cell === 'O' ? 'circle' : '' }}
-          </div>
+          v-for="(cell, y) in row" 
+          :key="y" 
+          @click="MakeMove(x, y)" 
+          :class="`
+            border border-white w-24 h-24 flex items-center justify-center 
+            material-icons-outlined text-4xl 
+            ${!isMyTurn || cell ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-gray-700'}
+            ${cell === 'X' ? 'text-pink-500' : 'text-blue-400'}
+          `">
+          {{ cell === 'X' ? 'close' : cell === 'O' ? 'circle' : '' }}
         </div>
       </div>
-  
-      <div class="text-center">
-        <h2 v-if="winner" class="text-6xl font-bold mb-8">Player '{{ winner }}' wins!</h2>
-        <button @click="ResetGame" class="px-4 py-2 bg-pink-500 rounded uppercase font-bold hover:bg-pink-600 duration-300">Reset</button>
-      </div>
-    </main>
-  </template>
-  
-  <script setup>
-  import { ref, computed } from 'vue'
-  
-  const player = ref('X')
-  const board = ref([
-    ['', '', ''],
-    ['', '', ''],
-    ['', '', '']
-  ])
-  
-  const CalculateWinner = (board) => {
-    const lines = [[0, 1, 2],[3, 4, 5],[6, 7, 8],[0, 3, 6],[1, 4, 7],[2, 5, 8],[0, 4, 8],[2, 4, 6]]
-  
-    for (let i = 0; i < lines.length; i++) {
-      const [a, b, c] = lines[i]
-  
-      if (board[a] && board[a] === board[b] && board[a] === board[c]) {
-        return board[a]
-      }
+    </div>
+
+    <div class="text-center">
+      <h2 v-if="winner" class="text-6xl font-bold mb-8">
+        {{ winner === currentPlayer ? 'Du hast gewonnen!' : 'Gegner hat gewonnen!' }}
+      </h2>
+      <button 
+        @click="ResetGame" 
+        class="px-4 py-2 bg-pink-500 rounded uppercase font-bold hover:bg-pink-600 duration-300">
+        Neues Spiel
+      </button>
+    </div>
+  </main>
+</template>
+
+<script setup>
+
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import io from 'socket.io-client'
+
+const socket = io('http://localhost:3001')
+const route = useRoute()
+const router = useRouter()
+
+const currentPlayer = ref('') // wird durch URL parameter gesetzt
+const currentTurn = ref('X') // wer ist gerade dran
+const board = ref([
+  ['', '', ''],
+  ['', '', ''],
+  ['', '', '']
+])
+
+// Berechnet, ob der aktuelle Spieler am Zug ist
+const isMyTurn = computed(() => currentPlayer.value === currentTurn.value)
+
+const winner = computed(() => {
+  const flatBoard = board.value.flat()
+  const lines = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8], // horizontal
+    [0, 3, 6], [1, 4, 7], [2, 5, 8], // vertikal
+    [0, 4, 8], [2, 4, 6] // diagonal
+  ]
+
+  for (let line of lines) {
+    const [a, b, c] = line
+    if (flatBoard[a] && flatBoard[a] === flatBoard[b] && flatBoard[a] === flatBoard[c]) {
+      return flatBoard[a]
     }
+  }
+  return null
+})
+
+const MakeMove = (x, y) => {
+  if (!isMyTurn.value || winner.value || board.value[x][y]) return
+
+  socket.emit('makeMove', {
+    x, 
+    y,
+    player: currentPlayer.value,
+    gameId: route.query.gameId
+  })
+}
+
+const ResetGame = () => {
+  socket.emit('resetGame', route.query.gameId)
+}
+
+onMounted(() => {
+  // Spieler-Typ (X oder O) aus URL holen
+  const playerType = route.query.player
+  const gameId = route.query.gameId
   
-    return null
+  if (!playerType || !gameId) {
+    router.push('/')
+    return
   }
   
-  const winner = computed(() => CalculateWinner(board.value.flat()))
+  currentPlayer.value = playerType
   
-  const MakeMove = (x, y) => {
-    if (winner.value) return
+  // Dem Spiel als spezifischer Spieler beitreten
+  socket.emit('playerJoined', {
+    gameId,
+    player: playerType
+  });
   
-    if (board.value[x][y]) return
+  // Auf Spielstandaktualisierungen hören
+  socket.on('gameState', (gameState) => {
+    console.log('Received game state:', gameState);
+    board.value = gameState.board;
+    currentTurn.value = gameState.currentTurn;
+  });
+})
+</script>
+
+<style scoped>
+.player-info {
+  background-color: rgba(255, 255, 255, 0.1);
+  padding: 1rem;
+  border-radius: 8px;
+}
+</style>
   
-    board.value[x][y] = player.value
-  
-    player.value = player.value === 'X' ? 'O' : 'X'
-  }
-  
-  const ResetGame = () => {
-    board.value = [
-      ['', '', ''],
-      ['', '', ''],
-      ['', '', '']
-    ]
-    player.value = 'X'
-  }
-  </script>
-  
-  <style>
+<style>
   #tictactoe {
     text-align: center;
     margin: 23px;
@@ -97,5 +159,5 @@
     font-size: 24px;
     cursor: pointer;
   }
-  </style>
+</style>
   
