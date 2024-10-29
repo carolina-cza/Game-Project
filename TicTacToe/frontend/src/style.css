@@ -178,6 +178,10 @@ a:hover {
   margin-top: 10px;
   font-size: 14px;
 }
+.icon {
+  font-size: 48px; /* Größe der Icons */
+  color: #ff4081; /* Farbe der Icons */
+}
 @media (prefers-color-scheme: light) {
   :root {
     --primary-color: #213547;
