@@ -134,30 +134,5 @@ onMounted(() => {
 }
 </style>
   
-<style>
-  #tictactoe {
-    text-align: center;
-    margin: 23px;
-    padding: 23px;
-  }
-  #board {
-    display: grid;
-    grid-template-columns: repeat(3, 100px);
-    grid-template-rows: repeat(3, 100px);
-    gap: 10px;
-    justify-content: center;
-    align-items: center;
-  }
-  #board div {
-    width: 100px;
-    height: 100px;
-    background-color: white;
-    border: 1px solid black;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 24px;
-    cursor: pointer;
-  }
-</style>
+
   
