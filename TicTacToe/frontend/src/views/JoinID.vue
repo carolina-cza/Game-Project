@@ -45,46 +45,72 @@
 </template>
   
 <script setup>
-  import { ref, onMounted, onUnmounted } from 'vue'
-  import { useRouter } from 'vue-router'
-  import io from 'socket.io-client'
-  
-  const socket = io('http://localhost:3001')
-  const gameId = ref('')
-  const createdGameId = ref('')
-  const router = useRouter()
-  
-  const createNewGame = () => {
+import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import io from 'socket.io-client'
+
+const socket = io('http://localhost:3001', {
+    transports: ['websocket', 'polling'],
+    withCredentials: true
+})
+const gameId = ref('')
+const createdGameId = ref('')
+const router = useRouter()
+
+const createNewGame = () => {
+    console.log('Requesting new game...')
     socket.emit('createGame')
-    // Weiterleitung erst nach Anzeige der ID
-  }
-  
-  const joinGame = () => {
+}
+
+const joinGame = () => {  // async entfernt
     if (gameId.value) {
-      socket.emit('joinGame', gameId.value)
+        console.log('Joining game:', gameId.value)
+        socket.emit('joinGame', gameId.value)
     }
-  }
-  
-  onMounted(() => {
-    socket.on('gameCreated', (id) => {
-      console.log('Game created with ID:', id)
-      createdGameId.value = id
-      // Weiterleitung erst nach Klick auf einen neuen "Start Game" Button
-    })
-  
-    socket.on('gameJoined', (id) => {
-      console.log('Joined game with ID:', id)
-      router.push(`/tictactoe?gameId=${id}&player=O`)
-    })
-  
-    socket.on('error', (message) => {
-      alert(message)
-    })
+}
+
+
+onMounted(() => {
+  // Verbindungs-Status-Logging
+  socket.on('connect', () => {
+    console.log('Connected to server')
   })
-  
-  onUnmounted(() => {
-    socket.disconnect()
+
+  socket.on('disconnect', () => {
+    console.log('Disconnected from server')
   })
+
+  socket.on('connect_error', (error) => {
+    console.error('Connection error:', error)
+  })
+
+  // Game Events
+  socket.on('gameCreated', (id) => {
+    console.log('Game created with ID:', id)
+    createdGameId.value = id
+  })
+
+  socket.on('gameJoined', (id) => {
+    console.log('Successfully joined game:', id)
+    router.push(`/tictactoe?gameId=${id}&player=O`)
+  })
+
+  socket.on('error', (message) => {
+    console.error('Game error:', message)
+    alert(message)
+  })
+})
+
+onUnmounted(() => {
+  // Cleanup socket event listeners
+  socket.off('gameCreated')
+  socket.off('gameJoined')
+  socket.off('error')
+  socket.off('connect')
+  socket.off('disconnect')
+  socket.off('connect_error')
+  socket.disconnect()
+})
 </script>
   
 <style scoped>

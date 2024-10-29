@@ -5,9 +5,10 @@ const express = require('express');
 
 const app = express();
 const server = http.createServer(app);
+
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:5173",
+        origin: ["http://localhost:5173" , "http://127.0.0.1:5173"],
         methods: ["GET", "POST"]
     }
 });
@@ -85,17 +86,22 @@ async function startServer() {
             console.log('User connected:', socket.id);
 
             socket.on('createGame', () => {
-                const gameId = Math.random().toString(36).substring(7);
-                console.log('Creating new game with ID:', gameId);
-                
-                activeGames.set(gameId, {
-                    board: [['', '', ''], ['', '', ''], ['', '', '']],
-                    currentTurn: 'X',
-                    players: { X: null, O: null }
-                });
-                
-                socket.emit('gameCreated', gameId);
-                console.log('Game created and ID sent to client');
+                try {
+                    const gameId = Math.random().toString(36).substring(7);
+                    console.log('Creating new game with ID:', gameId);
+                    
+                    activeGames.set(gameId, {
+                        board: [['', '', ''], ['', '', ''], ['', '', '']],
+                        currentTurn: 'X',
+                        players: { X: null, O: null }
+                    });
+                    
+                    socket.emit('gameCreated', gameId);
+                    console.log('Game created and ID sent to client:', gameId);
+                } catch (error) {
+                    console.error('Error creating game:', error);
+                    socket.emit('error', 'Failed to create game');
+                }
             });
 
             socket.on('joinGame', (gameId) => {
@@ -147,6 +153,24 @@ async function startServer() {
                     });
                 }
             });
+
+            socket.on('resetGame', (gameId) => {
+                const game = activeGames.get(gameId);
+                if (!game) return;
+            
+                game.board = [['', '', ''], ['', '', ''], ['', '', '']]
+                game.currentTurn = 'X'
+            
+                io.to(gameId).emit('resetGame')
+            })
+
+            socket.on('playerLeft', ({ gameId, player }) => {
+                const game = activeGames.get(gameId)
+                if (game) {
+                    io.to(gameId).emit('playerLeft')
+                    activeGames.delete(gameId)
+                }
+            })
         });
 
         const port = 3001;

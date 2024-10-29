@@ -37,17 +37,28 @@
       <h2 v-if="winner" class="text-6xl font-bold mb-8">
         {{ winner === currentPlayer ? 'Du hast gewonnen!' : 'Gegner hat gewonnen!' }}
       </h2>
-      <button 
-        @click="ResetGame" 
-        class="px-4 py-2 bg-pink-500 rounded uppercase font-bold hover:bg-pink-600 duration-300">
-        Neues Spiel
-      </button>
+      <h2 v-if="opponentLeft" class="text-6xl font-bold mb-8">
+        Gegner hat das Spiel verlassen - Du hast gewonnen!
+      </h2>
+      <div class="button-container flex justify-center gap-4">
+        <template v-if="!opponentLeft">
+          <button 
+            @click="ResetGame" 
+            class="px-4 py-2 bg-pink-500 rounded uppercase font-bold hover:bg-pink-600 duration-300">
+            Neues Spiel
+          </button>
+        </template>
+        <button 
+          @click="goToMainMenu" 
+          class="px-4 py-2 bg-gray-500 rounded uppercase font-bold hover:bg-gray-600 duration-300">
+          Hauptmenü
+        </button>
+      </div>
     </div>
   </main>
 </template>
 
 <script setup>
-
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import io from 'socket.io-client'
@@ -56,23 +67,23 @@ const socket = io('http://localhost:3001')
 const route = useRoute()
 const router = useRouter()
 
-const currentPlayer = ref('') // wird durch URL parameter gesetzt
-const currentTurn = ref('X') // wer ist gerade dran
+const currentPlayer = ref('')
+const currentTurn = ref('X')
+const opponentLeft = ref(false)
 const board = ref([
   ['', '', ''],
   ['', '', ''],
   ['', '', '']
 ])
 
-// Berechnet, ob der aktuelle Spieler am Zug ist
 const isMyTurn = computed(() => currentPlayer.value === currentTurn.value)
 
 const winner = computed(() => {
   const flatBoard = board.value.flat()
   const lines = [
-    [0, 1, 2], [3, 4, 5], [6, 7, 8], // horizontal
-    [0, 3, 6], [1, 4, 7], [2, 5, 8], // vertikal
-    [0, 4, 8], [2, 4, 6] // diagonal
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+    [0, 4, 8], [2, 4, 6]
   ]
 
   for (let line of lines) {
@@ -85,7 +96,7 @@ const winner = computed(() => {
 })
 
 const MakeMove = (x, y) => {
-  if (!isMyTurn.value || winner.value || board.value[x][y]) return
+  if (!isMyTurn.value || winner.value || board.value[x][y] || opponentLeft.value) return
 
   socket.emit('makeMove', {
     x, 
@@ -96,11 +107,21 @@ const MakeMove = (x, y) => {
 }
 
 const ResetGame = () => {
+  board.value = [['', '', ''], ['', '', ''], ['', '', '']]
+  currentTurn.value = 'X'
   socket.emit('resetGame', route.query.gameId)
 }
 
+const goToMainMenu = () => {
+  socket.emit('playerLeft', {
+    gameId: route.query.gameId,
+    player: currentPlayer.value
+  })
+  socket.disconnect()
+  router.push('/')
+}
+
 onMounted(() => {
-  // Spieler-Typ (X oder O) aus URL holen
   const playerType = route.query.player
   const gameId = route.query.gameId
   
@@ -111,18 +132,29 @@ onMounted(() => {
   
   currentPlayer.value = playerType
   
-  // Dem Spiel als spezifischer Spieler beitreten
   socket.emit('playerJoined', {
     gameId,
     player: playerType
-  });
+  })
   
-  // Auf Spielstandaktualisierungen hören
   socket.on('gameState', (gameState) => {
-    console.log('Received game state:', gameState);
-    board.value = gameState.board;
-    currentTurn.value = gameState.currentTurn;
-  });
+    console.log('Received game state:', gameState)
+    board.value = gameState.board
+    currentTurn.value = gameState.currentTurn
+  })
+
+  socket.on('playerLeft', () => {
+    opponentLeft.value = true
+  })
+
+  socket.on('resetGame', () => {
+    board.value = [['', '', ''], ['', '', ''], ['', '', '']]
+    currentTurn.value = 'X'
+  })
+})
+
+onUnmounted(() => {
+  socket.disconnect()
 })
 </script>
 
@@ -132,32 +164,39 @@ onMounted(() => {
   padding: 1rem;
   border-radius: 8px;
 }
+
+.button-container {
+  margin-top: 1rem;
+}
+
+.button-container button {
+  min-width: 150px;
+}
 </style>
-  
+
 <style>
-  #tictactoe {
-    text-align: center;
-    margin: 23px;
-    padding: 23px;
-  }
-  #board {
-    display: grid;
-    grid-template-columns: repeat(3, 100px);
-    grid-template-rows: repeat(3, 100px);
-    gap: 10px;
-    justify-content: center;
-    align-items: center;
-  }
-  #board div {
-    width: 100px;
-    height: 100px;
-    background-color: white;
-    border: 1px solid black;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 24px;
-    cursor: pointer;
-  }
+#tictactoe {
+  text-align: center;
+  margin: 23px;
+  padding: 23px;
+}
+#board {
+  display: grid;
+  grid-template-columns: repeat(3, 100px);
+  grid-template-rows: repeat(3, 100px);
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+}
+#board div {
+  width: 100px;
+  height: 100px;
+  background-color: white;
+  border: 1px solid black;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 24px;
+  cursor: pointer;
+}
 </style>
-  
