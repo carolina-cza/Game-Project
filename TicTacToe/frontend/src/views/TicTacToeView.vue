@@ -28,7 +28,7 @@
             ${!isMyTurn || cell ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-gray-700'}
             ${cell === 'X' ? 'text-pink-500' : 'text-blue-400'}
           `">
-          {{ cell === 'X' ? 'close' : cell === 'O' ? 'circle' : '' }}
+          {{ cell === 'X' ? 'X' : cell === 'O' ? 'O' : '' }}
         </div>
       </div>
     </div>
@@ -70,6 +70,7 @@ const router = useRouter()
 const currentPlayer = ref('')
 const currentTurn = ref('X')
 const opponentLeft = ref(false)
+const winner = ref(null)
 const board = ref([
   ['', '', ''],
   ['', '', ''],
@@ -78,26 +79,14 @@ const board = ref([
 
 const isMyTurn = computed(() => currentPlayer.value === currentTurn.value)
 
-const winner = computed(() => {
-  const flatBoard = board.value.flat()
-  const lines = [
-    [0, 1, 2], [3, 4, 5], [6, 7, 8],
-    [0, 3, 6], [1, 4, 7], [2, 5, 8],
-    [0, 4, 8], [2, 4, 6]
-  ]
-
-  for (let line of lines) {
-    const [a, b, c] = line
-    if (flatBoard[a] && flatBoard[a] === flatBoard[b] && flatBoard[a] === flatBoard[c]) {
-      return flatBoard[a]
-    }
-  }
-  return null
-})
-
+// Nur eine MakeMove Funktion behalten
 const MakeMove = (x, y) => {
-  if (!isMyTurn.value || winner.value || board.value[x][y] || opponentLeft.value) return
+  // Nur erlauben wenn ich am Zug bin
+  if (!isMyTurn.value || winner.value || board.value[x][y] !== '' || opponentLeft.value) {
+    return
+  }
 
+  // Zug an Server senden
   socket.emit('makeMove', {
     x, 
     y,
@@ -107,8 +96,6 @@ const MakeMove = (x, y) => {
 }
 
 const ResetGame = () => {
-  board.value = [['', '', ''], ['', '', ''], ['', '', '']]
-  currentTurn.value = 'X'
   socket.emit('resetGame', route.query.gameId)
 }
 
@@ -132,15 +119,21 @@ onMounted(() => {
   
   currentPlayer.value = playerType
   
+  // Dem Spiel beitreten
   socket.emit('playerJoined', {
     gameId,
     player: playerType
   })
   
+  // Spielstatus-Updates empfangen
   socket.on('gameState', (gameState) => {
     console.log('Received game state:', gameState)
     board.value = gameState.board
     currentTurn.value = gameState.currentTurn
+    if (gameState.winner) {
+      winner.value = gameState.winner
+    }
+    console.log('Current turn:', currentTurn.value, 'My player:', currentPlayer.value)
   })
 
   socket.on('playerLeft', () => {
@@ -148,6 +141,7 @@ onMounted(() => {
   })
 
   socket.on('resetGame', () => {
+    winner.value = null
     board.value = [['', '', ''], ['', '', ''], ['', '', '']]
     currentTurn.value = 'X'
   })
@@ -173,31 +167,32 @@ onUnmounted(() => {
   min-width: 150px;
 }
 </style>
-  
+
 <style>
-  #tictactoe {
-    text-align: center;
-    margin: 23px;
-    padding: 23px;
-  }
-  #board {
-    display: grid;
-    grid-template-columns: repeat(3, 100px);
-    grid-template-rows: repeat(3, 100px);
-    gap: 10px;
-    justify-content: center;
-    align-items: center;
-  }
-  #board div {
-    width: 100px;
-    height: 100px;
-    background-color: white;
-    border: 1px solid black;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 24px;
-    cursor: pointer;
-  }
+#tictactoe {
+  text-align: center;
+  margin: 23px;
+  padding: 23px;
+}
+
+#board {
+  display: grid;
+  grid-template-columns: repeat(3, 100px);
+  grid-template-rows: repeat(3, 100px);
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+}
+
+#board div {
+  width: 100px;
+  height: 100px;
+  background-color: white;
+  border: 1px solid black;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 24px;
+  cursor: pointer;
+}
 </style>
-  

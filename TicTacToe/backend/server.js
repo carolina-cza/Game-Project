@@ -2,19 +2,48 @@ const { Server } = require('socket.io');
 const http = require('http');
 const { Sequelize, DataTypes } = require('sequelize');
 const express = require('express');
+const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
 
 const io = new Server(server, {
     cors: {
-        origin: ["http://localhost:5173" , "http://127.0.0.1:5173"],
+        origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
         methods: ["GET", "POST"]
     }
 });
 
-// Aktive Spiele speichern
-const activeGames = new Map();
+app.use(express.json());
+app.use(cors());
+
+// Im Server-Code (server.js) diese neue Route hinzufügen:
+
+app.get('/api/game-moves/:gameId', async (req, res) => {
+    try {
+        const moves = await db.Move.findAll({
+            where: { gameId: req.params.gameId },
+            order: [['createdAt', 'ASC']],  // Sortiert nach Zeitpunkt
+            attributes: ['player', 'positionX', 'positionY', 'createdAt']
+        });
+        res.json(moves);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to get moves' });
+    }
+});
+
+// Zusätzlich einen Endpoint für alle aktiven Spiele:
+app.get('/api/games', async (req, res) => {
+    try {
+        const games = await db.Game.findAll({
+            attributes: ['gameId', 'status', 'currentTurn', 'winner', 'createdAt'],
+            order: [['createdAt', 'DESC']]
+        });
+        res.json(games);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to get games' });
+    }
+});
 
 const sequelize = new Sequelize({
     dialect: 'sqlite',
@@ -22,155 +51,287 @@ const sequelize = new Sequelize({
 });
 var db = {};
 
+// Überprüfe auf Gewinner
+function checkWinner(board) {
+    const lines = [
+        // Horizontal
+        [[0,0], [0,1], [0,2]],
+        [[1,0], [1,1], [1,2]],
+        [[2,0], [2,1], [2,2]],
+        // Vertikal
+        [[0,0], [1,0], [2,0]],
+        [[0,1], [1,1], [2,1]],
+        [[0,2], [1,2], [2,2]],
+        // Diagonal
+        [[0,0], [1,1], [2,2]],
+        [[0,2], [1,1], [2,0]]
+    ];
+
+    for (let line of lines) {
+        const [[a1,a2], [b1,b2], [c1,c2]] = line;
+        if (board[a1][a2] && 
+            board[a1][a2] === board[b1][b2] && 
+            board[a1][a2] === board[c1][c2]) {
+            return board[a1][a2];
+        }
+    }
+    return null;
+}
+
+// Überprüfe auf Unentschieden
+function checkDraw(board) {
+    return board.every(row => row.every(cell => cell !== ''));
+}
+
 async function setupDB() {
     try {
+        // Game Model
         db.Game = sequelize.define('Game', {
+            gameId: {
+                type: DataTypes.STRING,
+                unique: true,
+                allowNull: false
+            },
+            currentTurn: {
+                type: DataTypes.STRING,
+                allowNull: false,
+                defaultValue: 'X'
+            },
+            status: {
+                type: DataTypes.STRING,
+                defaultValue: 'active'
+            },
+            winner: {
+                type: DataTypes.STRING,
+                allowNull: true
+            }
+        });
+
+        // Move Model für Spielzüge
+        db.Move = sequelize.define('Move', {
+            gameId: {
+                type: DataTypes.STRING,
+                allowNull: false
+            },
             player: {
                 type: DataTypes.STRING,
                 allowNull: false
             },
-            score: {
+            positionX: {
                 type: DataTypes.INTEGER,
                 allowNull: false
             },
-            date: {
-                type: DataTypes.DATE,
-                allowNull: false,
-                defaultValue: DataTypes.NOW
+            positionY: {
+                type: DataTypes.INTEGER,
+                allowNull: false
             }
         });
+
         await sequelize.sync({ force: true });
-        await db.Game.create({ player: "Player1", score: 10 });
-        await db.Game.create({ player: "Player2", score: 20 });
-        await db.Game.create({ player: "Player3", score: 15 });
     } catch (error) {
-        console.error(error);
+        console.error('Database setup error:', error);
+    }
+}
+
+// Rekonstruiere Spielbrett aus Moves
+async function getBoardState(gameId) {
+    try {
+        const moves = await db.Move.findAll({
+            where: { gameId },
+            order: [['createdAt', 'ASC']]
+        });
+
+        let board = [['', '', ''], ['', '', ''], ['', '', '']];
+        moves.forEach(move => {
+            board[move.positionX][move.positionY] = move.player;
+        });
+
+        return board;
+    } catch (error) {
+        console.error('Error getting board state:', error);
+        return [['', '', ''], ['', '', ''], ['', '', '']];
     }
 }
 
 async function startServer() {
     try {
         await setupDB();
-        
-        app.use(express.json());
 
-        app.get('/', (req, res) => {
-            res.send('hello world');
-        });
-
-        app.get('/api/games', (req, res) => {
-            db.Game.findAll().then(games => {
-                res.json(games);
-            });
-        });
-
-        app.post('/api/games', (req, res) => {
-            db.Game.create(req.body).then(game => {
-                res.json(game);
-            });
-        });
-
-        app.delete('/api/games/:id', (req, res) => {
-            db.Game.destroy({
-                where: { id: req.params.id }
-            }).then(() => {
-                res.sendStatus(204);
-            }).catch((error) => {
-                console.error(error);
-                res.sendStatus(500);
-            });
-        });
-
-        // Socket.io Event Handler
         io.on('connection', (socket) => {
             console.log('User connected:', socket.id);
 
-            socket.on('createGame', () => {
+            // Spiel erstellen
+            socket.on('createGame', async () => {
                 try {
                     const gameId = Math.random().toString(36).substring(7);
-                    console.log('Creating new game with ID:', gameId);
-                    
-                    activeGames.set(gameId, {
-                        board: [['', '', ''], ['', '', ''], ['', '', '']],
-                        currentTurn: 'X',
-                        players: { X: null, O: null }
-                    });
-                    
+                    await db.Game.create({ gameId });
                     socket.emit('gameCreated', gameId);
-                    console.log('Game created and ID sent to client:', gameId);
                 } catch (error) {
-                    console.error('Error creating game:', error);
                     socket.emit('error', 'Failed to create game');
                 }
             });
 
-            socket.on('joinGame', (gameId) => {
-                const game = activeGames.get(gameId);
-                if (!game) {
-                    socket.emit('error', 'Game not found');
-                    return;
-                }
+            // Spiel beitreten
+            socket.on('joinGame', async (gameId) => {
+                try {
+                    const game = await db.Game.findOne({ where: { gameId } });
+                    if (!game) {
+                        socket.emit('error', 'Game not found');
+                        return;
+                    }
 
-                if (game.players.X && game.players.O) {
-                    socket.emit('error', 'Game is full');
-                    return;
-                }
-
-                socket.join(gameId);
-                socket.emit('gameJoined', gameId);
-
-                io.to(gameId).emit('gameState', {
-                    board: game.board,
-                    currentTurn: game.currentTurn
-                });
-            });
-
-            socket.on('makeMove', ({ x, y, player, gameId }) => {
-                const game = activeGames.get(gameId);
-                if (!game) return;
-
-                if (game.currentTurn !== player || game.board[x][y] !== '') return;
-
-                game.board[x][y] = player;
-                game.currentTurn = player === 'X' ? 'O' : 'X';
-
-                io.to(gameId).emit('gameState', {
-                    board: game.board,
-                    currentTurn: game.currentTurn
-                });
-            });
-
-            socket.on('playerJoined', ({ gameId, player }) => {
-                console.log(`Player ${player} joined game ${gameId}`);
-                const game = activeGames.get(gameId);
-                if (game) {
-                    game.players[player] = socket.id;
                     socket.join(gameId);
-                    
+                    socket.emit('gameJoined', gameId);
+
+                    const board = await getBoardState(gameId);
                     io.to(gameId).emit('gameState', {
-                        board: game.board,
-                        currentTurn: game.currentTurn
+                        board,
+                        currentTurn: game.currentTurn,
+                        winner: game.winner
                     });
+                } catch (error) {
+                    socket.emit('error', 'Failed to join game');
                 }
             });
 
-            socket.on('resetGame', (gameId) => {
-                const game = activeGames.get(gameId);
-                if (!game) return;
-            
-                game.board = [['', '', ''], ['', '', ''], ['', '', '']]
-                game.currentTurn = 'X'
-            
-                io.to(gameId).emit('resetGame')
-            })
-
-            socket.on('playerLeft', ({ gameId, player }) => {
-                const game = activeGames.get(gameId)
-                if (game) {
-                    io.to(gameId).emit('playerLeft')
-                    activeGames.delete(gameId)
+            socket.on('playerJoined', async ({ gameId, player }) => {
+                try {
+                    console.log(`Player ${player} joined game ${gameId}`);
+                    const game = await db.Game.findOne({ where: { gameId } });
+                    if (game) {
+                        socket.join(gameId); // Spieler dem Raum hinzufügen
+                        
+                        // Aktuellen Spielstand holen
+                        const board = await getBoardState(gameId);
+                        
+                        // Allen Spielern im Raum den aktuellen Stand schicken
+                        io.to(gameId).emit('gameState', {
+                            board: board,
+                            currentTurn: game.currentTurn,
+                            winner: game.winner
+                        });
+                    }
+                } catch (error) {
+                    console.error('Player joined error:', error);
                 }
-            })
+            });
+            
+            socket.on('makeMove', async ({ x, y, player, gameId }) => {
+                try {
+                    const game = await db.Game.findOne({ where: { gameId } });
+                    if (!game || game.status !== 'active' || game.currentTurn !== player) {
+                        return;
+                    }
+            
+                    const board = await getBoardState(gameId);
+                    if (board[x][y] !== '') return;
+            
+                    // Spielzug speichern
+                    await db.Move.create({
+                        gameId,
+                        player,
+                        positionX: x,
+                        positionY: y
+                    });
+            
+                    // Board aktualisieren
+                    board[x][y] = player;
+            
+                    // Auf Gewinner prüfen
+                    const winner = checkWinner(board);
+                    const isDraw = !winner && checkDraw(board);
+            
+                    // Spiel aktualisieren
+                    await game.update({
+                        currentTurn: player === 'X' ? 'O' : 'X',
+                        status: winner || isDraw ? 'ended' : 'active',
+                        winner: winner || null
+                    });
+            
+                    // WICHTIG: Broadcast an alle Spieler im Raum
+                    io.to(gameId).emit('gameState', {
+                        board,
+                        currentTurn: game.currentTurn,
+                        winner: game.winner
+                    });
+            
+                } catch (error) {
+                    console.error('Error making move:', error);
+                }
+            });
+            
+            // Hilfsfunktion für Gewinner-Prüfung
+            function checkWinner(board) {
+                const lines = [
+                    // Horizontale
+                    [[0,0], [0,1], [0,2]],
+                    [[1,0], [1,1], [1,2]],
+                    [[2,0], [2,1], [2,2]],
+                    // Vertikale
+                    [[0,0], [1,0], [2,0]],
+                    [[0,1], [1,1], [2,1]],
+                    [[0,2], [1,2], [2,2]],
+                    // Diagonale
+                    [[0,0], [1,1], [2,2]],
+                    [[0,2], [1,1], [2,0]]
+                ];
+            
+                for (let line of lines) {
+                    const [[a1,a2], [b1,b2], [c1,c2]] = line;
+                    if (board[a1][a2] && 
+                        board[a1][a2] === board[b1][b2] && 
+                        board[a1][a2] === board[c1][c2]) {
+                        return board[a1][a2];
+                    }
+                }
+                return null;
+            }
+            
+            function checkDraw(board) {
+                return board.every(row => row.every(cell => cell !== ''));
+            }
+
+            // Spiel zurücksetzen
+            socket.on('resetGame', async (gameId) => {
+                try {
+                    // Alle Züge löschen
+                    await db.Move.destroy({ where: { gameId } });
+                    
+                    // Spiel zurücksetzen
+                    await db.Game.update({
+                        currentTurn: 'X',
+                        status: 'active',
+                        winner: null
+                    }, { 
+                        where: { gameId } 
+                    });
+
+                    // Alle Spieler informieren
+                    io.to(gameId).emit('gameState', {
+                        board: [['', '', ''], ['', '', ''], ['', '', '']],
+                        currentTurn: 'X',
+                        winner: null
+                    });
+                } catch (error) {
+                    console.error('Error resetting game:', error);
+                }
+            });
+
+            // Spieler verlässt Spiel
+            socket.on('playerLeft', async ({ gameId, player }) => {
+                try {
+                    const game = await db.Game.findOne({ where: { gameId } });
+                    if (game) {
+                        await game.update({ 
+                            status: 'ended',
+                            winner: player === 'X' ? 'O' : 'X'
+                        });
+                        io.to(gameId).emit('playerLeft');
+                    }
+                } catch (error) {
+                    console.error('Error player leaving:', error);
+                }
+            });
         });
 
         const port = 3001;
