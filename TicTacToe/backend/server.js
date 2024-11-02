@@ -237,28 +237,30 @@ async function startServer() {
                     // Board aktualisieren
                     board[x][y] = player;
             
-                    // Auf Gewinner prüfen
-                    const winner = checkWinner(board);
-                    const isDraw = !winner && checkDraw(board);
+                    // Gewinner- und Unentschieden-Prüfung
+                    const winnerPlayer = checkWinner(board);
+                    const isDraw = !winnerPlayer && checkDraw(board);
             
-                    // Spiel aktualisieren
+                    // Spielstatus aktualisieren
                     await game.update({
                         currentTurn: player === 'X' ? 'O' : 'X',
-                        status: winner || isDraw ? 'ended' : 'active',
-                        winner: winner || null
+                        status: winnerPlayer || isDraw ? 'ended' : 'active',
+                        winner: winnerPlayer || (isDraw ? 'Draw' : null)
                     });
             
-                    // WICHTIG: Broadcast an alle Spieler im Raum
+                    // Broadcast an alle Spieler im Raum
                     io.to(gameId).emit('gameState', {
                         board,
                         currentTurn: game.currentTurn,
-                        winner: game.winner
+                        winner: game.winner,
+                        isDraw  // Unentschieden-Status mitgeben
                     });
-            
                 } catch (error) {
                     console.error('Error making move:', error);
                 }
             });
+            
+              
             
             // Hilfsfunktion für Gewinner-Prüfung
             function checkWinner(board) {
