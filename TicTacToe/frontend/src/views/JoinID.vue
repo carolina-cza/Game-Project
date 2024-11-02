@@ -2,6 +2,7 @@
   <div id="gameIdContainer">
     <h1>Enter Game ID</h1>
     <div class="input-container">
+      <!-- Display created game ID and start button if game ID is created -->
       <div v-if="createdGameId" class="game-id-display">
         <p>
           Your Game ID: <span class="id-highlight">{{ createdGameId }}</span>
@@ -12,6 +13,7 @@
           class="enter-button mt-4"> Start Game
         </button>
       </div>
+      <!-- Input field and buttons for creating or joining a game if no game ID is created -->
       <template v-else>
         <input
           v-model="gameId"
@@ -40,6 +42,7 @@ import { ref, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import io from "socket.io-client";
 
+// Initialize socket connection
 const socket = io("http://localhost:3001", {
   transports: ["websocket", "polling"],
   withCredentials: true,
@@ -52,7 +55,7 @@ const currentUser = ref(null);
 const showLoginModal = ref(false);
 const showRegisterModal = ref(false);
 
-// Session-Status beim Laden prüfen
+// Check session status on component mount
 onMounted(async () => {
   const sessionToken = localStorage.getItem("sessionToken");
   if (sessionToken) {
@@ -67,7 +70,7 @@ onMounted(async () => {
     }
   }
 
-  // Socket Events
+  // Handle socket events
   socket.on("connect", () => console.log("Connected to server"));
   socket.on("disconnect", () => console.log("Disconnected from server"));
   socket.on("connect_error", (error) =>
@@ -80,18 +83,22 @@ onMounted(async () => {
   socket.on("error", (message) => alert(message));
 });
 
+// Function to create a new game
 const createNewGame = () => socket.emit("createGame");
+
+// Function to join an existing game
 const joinGame = () => {
   if (gameId.value) socket.emit("joinGame", gameId.value);
 };
 
+// Disconnect socket on component unmount
 onUnmounted(() => {
   socket.disconnect();
 });
 </script>
 
 <style scoped>
-/* Allgemeine Container-Einstellungen */
+/* General container settings */
 #gameIdContainer {
   text-align: center;
   margin: 23px;

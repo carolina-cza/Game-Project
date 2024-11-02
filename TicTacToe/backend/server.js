@@ -17,13 +17,12 @@ const io = new Server(server, {
 app.use(express.json());
 app.use(cors());
 
-// Im Server-Code (server.js) diese neue Route hinzufügen:
-
+// Add a new route to get game moves by gameId
 app.get("/api/game-moves/:gameId", async (req, res) => {
   try {
     const moves = await db.Move.findAll({
       where: { gameId: req.params.gameId },
-      order: [["createdAt", "ASC"]], // Sortiert nach Zeitpunkt
+      order: [["createdAt", "ASC"]], // Sort by creation time
       attributes: ["player", "positionX", "positionY", "createdAt"],
     });
     res.json(moves);
@@ -32,7 +31,7 @@ app.get("/api/game-moves/:gameId", async (req, res) => {
   }
 });
 
-// Zusätzlich einen Endpoint für alle aktiven Spiele:
+// Add an endpoint to get all active games
 app.get("/api/games", async (req, res) => {
   try {
     const games = await db.Game.findAll({
@@ -51,7 +50,7 @@ const sequelize = new Sequelize({
 });
 var db = {};
 
-// Überprüfe auf Gewinner
+// Check for a winner
 function checkWinner(board) {
   const lines = [
     // Horizontal
@@ -70,7 +69,7 @@ function checkWinner(board) {
       [2, 1],
       [2, 2],
     ],
-    // Vertikal
+    // Vertical
     [
       [0, 0],
       [1, 0],
@@ -112,11 +111,12 @@ function checkWinner(board) {
   return null;
 }
 
-// Überprüfe auf Unentschieden
+// Check for a draw
 function checkDraw(board) {
   return board.every((row) => row.every((cell) => cell !== ""));
 }
 
+// Setup the database models
 async function setupDB() {
   try {
     // Game Model
@@ -141,7 +141,7 @@ async function setupDB() {
       },
     });
 
-    // Move Model für Spielzüge
+    // Move Model for game moves
     db.Move = sequelize.define("Move", {
       gameId: {
         type: DataTypes.STRING,
@@ -167,7 +167,7 @@ async function setupDB() {
   }
 }
 
-// Rekonstruiere Spielbrett aus Moves
+// Reconstruct the game board from moves
 async function getBoardState(gameId) {
   try {
     const moves = await db.Move.findAll({
@@ -195,6 +195,7 @@ async function getBoardState(gameId) {
   }
 }
 
+// Start the server and setup socket.io events
 async function startServer() {
   try {
     await setupDB();
@@ -202,7 +203,7 @@ async function startServer() {
     io.on("connection", (socket) => {
       console.log("User connected:", socket.id);
 
-      // Spiel erstellen
+      // Create a new game
       socket.on("createGame", async () => {
         try {
           const gameId = Math.random().toString(36).substring(7);
@@ -213,7 +214,7 @@ async function startServer() {
         }
       });
 
-      // Spiel beitreten
+      // Join an existing game
       socket.on("joinGame", async (gameId) => {
         try {
           const game = await db.Game.findOne({ where: { gameId } });
@@ -236,17 +237,18 @@ async function startServer() {
         }
       });
 
+      // Handle player joining a game
       socket.on("playerJoined", async ({ gameId, player }) => {
         try {
           console.log(`Player ${player} joined game ${gameId}`);
           const game = await db.Game.findOne({ where: { gameId } });
           if (game) {
-            socket.join(gameId); // Spieler dem Raum hinzufügen
+            socket.join(gameId); // Add player to the room
 
-            // Aktuellen Spielstand holen
+            // Get the current game state
             const board = await getBoardState(gameId);
 
-            // Allen Spielern im Raum den aktuellen Stand schicken
+            // Send the current state to all players in the room
             io.to(gameId).emit("gameState", {
               board: board,
               currentTurn: game.currentTurn,
@@ -258,6 +260,7 @@ async function startServer() {
         }
       });
 
+      // Handle making a move
       socket.on("makeMove", async ({ x, y, player, gameId }) => {
         try {
           const game = await db.Game.findOne({ where: { gameId } });
@@ -272,7 +275,7 @@ async function startServer() {
           const board = await getBoardState(gameId);
           if (board[x][y] !== "") return;
 
-          // Spielzug speichern
+          // Save the move
           await db.Move.create({
             gameId,
             player,
@@ -280,33 +283,32 @@ async function startServer() {
             positionY: y,
           });
 
-          // Board aktualisieren
+          // Update the board
           board[x][y] = player;
 
-          // Gewinner- und Unentschieden-Prüfung
+          // Check for winner or draw
           const winnerPlayer = checkWinner(board);
           const isDraw = !winnerPlayer && checkDraw(board);
 
-          // Spielstatus aktualisieren
+          // Update game status
           await game.update({
             currentTurn: player === "X" ? "O" : "X",
             status: winnerPlayer || isDraw ? "ended" : "active",
             winner: winnerPlayer || (isDraw ? "Draw" : null),
           });
 
-          // Broadcast an alle Spieler im Raum
+          // Broadcast the game state to all players in the room
           io.to(gameId).emit("gameState", {
             board,
             currentTurn: game.currentTurn,
             winner: game.winner,
-            isDraw, // Unentschieden-Status mitgeben
+            isDraw, // Include draw status
           });
         } catch (error) {
           console.error("Error making move:", error);
         }
-      });
-
-      // Hilfsfunktion für Gewinner-Prüfung
+      })
+      // Helper function to check for a winner
       function checkWinner(board) {
         const lines = [
           // Horizontale
@@ -325,7 +327,7 @@ async function startServer() {
             [2, 1],
             [2, 2],
           ],
-          // Vertikale
+          // Verticale
           [
             [0, 0],
             [1, 0],
@@ -371,13 +373,13 @@ async function startServer() {
         return board.every((row) => row.every((cell) => cell !== ""));
       }
 
-      // Spiel zurücksetzen
+      // reset game
       socket.on("resetGame", async (gameId) => {
         try {
-          // Alle Züge löschen
+          // delete all moves
           await db.Move.destroy({ where: { gameId } });
 
-          // Spiel zurücksetzen
+          // reset game state
           await db.Game.update(
             {
               currentTurn: "X",
@@ -389,7 +391,7 @@ async function startServer() {
             }
           );
 
-          // Alle Spieler informieren
+          // inform all players
           io.to(gameId).emit("gameState", {
             board: [
               ["", "", ""],
@@ -404,7 +406,7 @@ async function startServer() {
         }
       });
 
-      // Spieler verlässt Spiel
+      // Player left
       socket.on("playerLeft", async ({ gameId, player }) => {
         try {
           const game = await db.Game.findOne({ where: { gameId } });

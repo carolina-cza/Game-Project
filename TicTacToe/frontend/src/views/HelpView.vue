@@ -20,10 +20,3 @@
   </div>
 </template>
 
-<style>
-#help-container {
-  text-align: center;
-  margin: 23px;
-  padding: 23px;
-}
-</style>
