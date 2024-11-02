@@ -37,6 +37,9 @@
       <h2 v-if="winner" class="text-6xl font-bold mb-8">
         {{ winner === currentPlayer ? 'Du hast gewonnen!' : 'Gegner hat gewonnen!' }}
       </h2>
+      <h2 v-if="isDraw" class="text-6xl font-bold mb-8">
+        Unentschieden!
+      </h2>
       <h2 v-if="opponentLeft" class="text-6xl font-bold mb-8">
         Gegner hat das Spiel verlassen - Du hast gewonnen!
       </h2>
@@ -71,6 +74,7 @@ const currentPlayer = ref('')
 const currentTurn = ref('X')
 const opponentLeft = ref(false)
 const winner = ref(null)
+const isDraw = ref(false)
 const board = ref([
   ['', '', ''],
   ['', '', ''],
@@ -79,14 +83,11 @@ const board = ref([
 
 const isMyTurn = computed(() => currentPlayer.value === currentTurn.value)
 
-// Nur eine MakeMove Funktion behalten
 const MakeMove = (x, y) => {
-  // Nur erlauben wenn ich am Zug bin
   if (!isMyTurn.value || winner.value || board.value[x][y] !== '' || opponentLeft.value) {
     return
   }
 
-  // Zug an Server senden
   socket.emit('makeMove', {
     x, 
     y,
@@ -96,7 +97,13 @@ const MakeMove = (x, y) => {
 }
 
 const ResetGame = () => {
-  socket.emit('resetGame', route.query.gameId)
+  winner.value = null;
+  opponentLeft.value = false;
+  currentTurn.value = 'X';
+  isDraw.value = false;
+  board.value = [['', '', ''], ['', '', '']];
+
+  socket.emit('resetGame', route.query.gameId);
 }
 
 const goToMainMenu = () => {
@@ -119,21 +126,16 @@ onMounted(() => {
   
   currentPlayer.value = playerType
   
-  // Dem Spiel beitreten
   socket.emit('playerJoined', {
     gameId,
     player: playerType
   })
   
-  // Spielstatus-Updates empfangen
   socket.on('gameState', (gameState) => {
-    console.log('Received game state:', gameState)
     board.value = gameState.board
     currentTurn.value = gameState.currentTurn
-    if (gameState.winner) {
-      winner.value = gameState.winner
-    }
-    console.log('Current turn:', currentTurn.value, 'My player:', currentPlayer.value)
+    winner.value = gameState.winner
+    isDraw.value = gameState.isDraw
   })
 
   socket.on('playerLeft', () => {
@@ -142,6 +144,7 @@ onMounted(() => {
 
   socket.on('resetGame', () => {
     winner.value = null
+    isDraw.value = false
     board.value = [['', '', ''], ['', '', ''], ['', '', '']]
     currentTurn.value = 'X'
   })
@@ -165,34 +168,5 @@ onUnmounted(() => {
 
 .button-container button {
   min-width: 150px;
-}
-</style>
-
-<style>
-#tictactoe {
-  text-align: center;
-  margin: 23px;
-  padding: 23px;
-}
-
-#board {
-  display: grid;
-  grid-template-columns: repeat(3, 100px);
-  grid-template-rows: repeat(3, 100px);
-  gap: 10px;
-  justify-content: center;
-  align-items: center;
-}
-
-#board div {
-  width: 100px;
-  height: 100px;
-  background-color: white;
-  border: 1px solid black;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  font-size: 24px;
-  cursor: pointer;
 }
 </style>
